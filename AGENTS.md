@@ -39,6 +39,34 @@ Příklady:
 3. Přidejte hru do pole `games` v hlavním `script.js`.
 4. Commitujte s `feat: add [název hry]`.
 
+## Responzivnost her
+
+- Používejte škálování canvas pomocí CSS transform: scale() nebo nastavení width/height v px po výpočtu škály.
+- Základní rozměry (např. 600x400) škálujte podle kontejneru, ale pouze zmenšujte, ne zvětšujte.
+- Používejte BASE_WIDTH a BASE_HEIGHT pro logiku, škálování pro zobrazení.
+
+## Modální okna a UX
+
+- Hry se spouští v iframe uvnitř modal-content s tmavým pozadím a padding.
+- Modal má tmavý gradient background, modal-content transparent s padding 10px.
+- Zavírání modalu: Esc klávesa, křížek vpravo nahoře.
+- Klávesové ovládání menu: šipky pro navigaci (přidání/odebrání class 'selected'), Enter pro výběr.
+- Používejte postMessage pro komunikaci z iframe do parent (např. zavření modalu).
+
+## Stylování
+
+- Moderní tmavý theme: gradients (linear-gradient), rgba pro průhlednost, blur efekty.
+- Tlačítka: rounded, gradient, hover efekty s transform a box-shadow.
+- Hry: tmavé pozadí, kulaté rohy na canvas a kontejner.
+- Alert okna: vlastní modal místo window.alert, tmavý design.
+
+## Implementace
+
+- Používejte iframe místo innerHTML pro načítání her, aby fungovaly scripty.
+- Dev server: upravte na no-cache headers pro okamžité změny.
+- Game loop: zastavte při game over pomocí gameRunning flag.
+- Debug: používejte alerty pro kontrolu eventů a stavů.
+
 ## Poznámky
 
 - Všechny hry běží na klientovi.
