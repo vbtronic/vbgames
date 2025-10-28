@@ -1,6 +1,7 @@
 // Seznam her - každý objekt má název a cestu k HTML souboru
 const games = [
-    { name: "Space Invaders", path: "games/space-invaders/index.html" }
+    { name: "Space Invaders", path: "games/space-invaders/index.html" },
+    { name: "Vesmírná mise", path: "games/vesmirna-mise/index.html" }
 ];
 
 const gameList = document.getElementById('game-list');
