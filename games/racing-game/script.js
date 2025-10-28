@@ -5,16 +5,12 @@ const ctx = canvas.getContext('2d');
 let gameState = 'intro';
 let gameRunning = true;
 let introStartTime = 0;
-let playerName = '';
-let selectedTrack = '';
 let playerPosition = 0;
 let aiCars = [];
 let oncomingCars = [];
 let slowCars = [];
 let playerCar = null;
-let trackLength = 0;
-let trackProgress = 0;
-let score = 0;
+let cameraY = 0;
 let keys = {};
 
 // Nastavení velikosti canvas
@@ -39,20 +35,21 @@ const GRASS_COLOR = '#0f0';
 
 // Třídy
 class Car {
-    constructor(x, y, color, isPlayer = false, name = '') {
+    constructor(x, y, color, isPlayer = false, name = '', type = 'player') {
         this.x = x;
         this.y = y;
         this.width = 40;
         this.height = 20;
         this.color = color;
         this.speed = 0;
-        this.maxSpeed = 5;
+        this.maxSpeed = type === 'slow' ? 2 : 5;
         this.acceleration = 0.1;
         this.deceleration = 0.05;
         this.lane = 0; // 0 nebo 1
         this.isPlayer = isPlayer;
         this.name = name;
         this.progress = 0;
+        this.type = type; // 'player', 'ai', 'slow', 'oncoming'
     }
 
     update() {
@@ -77,8 +74,14 @@ class Car {
                 this.x += 50;
             }
         } else {
-            // AI logika - jednoduchá
-            this.speed = Math.random() * 3 + 2;
+            // AI logika
+            if (this.type === 'ai') {
+                this.speed = Math.random() * 3 + 3;
+            } else if (this.type === 'slow') {
+                this.speed = Math.random() * 1 + 1;
+            } else if (this.type === 'oncoming') {
+                this.speed = Math.random() * 4 + 2;
+            }
         }
         this.y -= this.speed;
         this.progress += this.speed;
@@ -116,22 +119,13 @@ function gameLoop() {
 // Update
 function update() {
     if (gameState === 'intro') {
-        if (Date.now() - introStartTime > 60000 || keys[' ']) { // 1 minuta nebo mezerník
-            gameState = 'name_select';
-        }
-    } else if (gameState === 'name_select') {
-        // Zde by byla logika pro výběr jména, ale pro jednoduchost použijeme první
-        playerName = americanNames[Math.floor(Math.random() * americanNames.length)];
-        gameState = 'track_select';
-    } else if (gameState === 'track_select') {
-        if (keys[' ']) {
-            selectedTrack = 'easy'; // Pro jednoduchost
-            trackLength = 10000;
+        if (Date.now() - introStartTime > 10000 || keys[' ']) { // 10 sekund nebo mezerník
             gameState = 'playing';
             initGame();
         }
     } else if (gameState === 'playing') {
         playerCar.update();
+        cameraY = playerCar.y - BASE_HEIGHT / 2; // Camera follow
         aiCars.forEach(car => car.update());
         oncomingCars.forEach(car => {
             car.update();
@@ -142,14 +136,15 @@ function update() {
         slowCars.forEach(car => car.update());
         // Generování nových aut
         if (Math.random() < 0.01) {
-            oncomingCars.push(new Car(Math.random() * BASE_WIDTH, BASE_HEIGHT + 50, '#00f'));
+            oncomingCars.push(new Car(BASE_WIDTH/2 + (Math.random() - 0.5) * 200, cameraY + BASE_HEIGHT + 50, '#00f', false, '', 'oncoming'));
         }
         if (Math.random() < 0.005) {
-            slowCars.push(new Car(BASE_WIDTH/2 + (Math.random() - 0.5) * 100, BASE_HEIGHT + 50, '#ff0'));
+            slowCars.push(new Car(BASE_WIDTH/2 + (Math.random() - 0.5) * 100, cameraY + BASE_HEIGHT + 50, '#ff0', false, '', 'slow'));
         }
         // Odstranění aut mimo obrazovku
-        oncomingCars = oncomingCars.filter(car => car.y > -50);
-        slowCars = slowCars.filter(car => car.y > -50);
+        oncomingCars = oncomingCars.filter(car => car.y < cameraY - 100);
+        slowCars = slowCars.filter(car => car.y < cameraY - 100);
+        aiCars = aiCars.filter(car => car.y < cameraY - 100);
         // Kontrola předjíždění
         playerPosition = 1;
         aiCars.forEach(car => {
@@ -157,9 +152,6 @@ function update() {
                 playerPosition++;
             }
         });
-        if (trackProgress >= trackLength) {
-            gameState = 'finished';
-        }
     }
 }
 
@@ -168,16 +160,15 @@ function draw() {
     ctx.clearRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
     if (gameState === 'intro') {
         drawIntro();
-    } else if (gameState === 'name_select') {
-        drawNameSelect();
-    } else if (gameState === 'track_select') {
-        drawTrackSelect();
     } else if (gameState === 'playing') {
+        ctx.save();
+        ctx.translate(0, -cameraY);
         drawRoad();
         playerCar.draw();
         aiCars.forEach(car => car.draw());
         oncomingCars.forEach(car => car.draw());
         slowCars.forEach(car => car.draw());
+        ctx.restore();
         drawUI();
     } else if (gameState === 'game_over') {
         drawGameOver();
@@ -185,30 +176,22 @@ function draw() {
 }
 
 function drawIntro() {
+    let time = (Date.now() - introStartTime) / 1000; // sekundy
+    drawRoad();
+    // Animace aut
+    let demoPlayer = new Car(BASE_WIDTH/2 - 50, BASE_HEIGHT/2 + Math.sin(time * 2) * 50, '#f00', false, 'Player', 'player');
+    demoPlayer.draw();
+    let demoAI = new Car(BASE_WIDTH/2 + 50, BASE_HEIGHT/2 + Math.sin(time * 2 + 1) * 50, '#0f0', false, 'AI', 'ai');
+    demoAI.draw();
+    let demoSlow = new Car(BASE_WIDTH/2, BASE_HEIGHT/2 + 100 + Math.sin(time * 1.5) * 20, '#ff0', false, '', 'slow');
+    demoSlow.draw();
+    let demoOncoming = new Car(BASE_WIDTH/2, BASE_HEIGHT/2 - 100 - Math.sin(time * 1.5) * 20, '#00f', false, '', 'oncoming');
+    demoOncoming.draw();
     ctx.fillStyle = '#fff';
-    ctx.font = '24px Arial';
-    ctx.fillText('Ukázka hry - Mezerník pro přeskočení', BASE_WIDTH/2 - 200, BASE_HEIGHT/2);
-    // Jednoduchá animace
-    ctx.fillRect(100, 200, 40, 20);
-    ctx.fillRect(BASE_WIDTH/2, BASE_HEIGHT/2, 40, 20);
+    ctx.font = '16px Arial';
+    ctx.fillText('Ukázka - Mezerník pro start', BASE_WIDTH/2 - 100, BASE_HEIGHT - 50);
 }
 
-function drawNameSelect() {
-    ctx.fillStyle = '#fff';
-    ctx.font = '24px Arial';
-    ctx.fillText('Vyber jméno: ' + playerName, BASE_WIDTH/2 - 100, BASE_HEIGHT/2);
-    ctx.fillText('Stiskni mezerník', BASE_WIDTH/2 - 80, BASE_HEIGHT/2 + 50);
-}
-
-function drawTrackSelect() {
-    ctx.fillStyle = '#fff';
-    ctx.font = '24px Arial';
-    ctx.fillText('Vyber okruh:', BASE_WIDTH/2 - 80, BASE_HEIGHT/2 - 50);
-    ctx.fillText('Easy - Krátký', BASE_WIDTH/2 - 80, BASE_HEIGHT/2);
-    ctx.fillText('Medium - Střední', BASE_WIDTH/2 - 80, BASE_HEIGHT/2 + 30);
-    ctx.fillText('Hard - Dlouhý', BASE_WIDTH/2 - 80, BASE_HEIGHT/2 + 60);
-    ctx.fillText('Stiskni mezerník pro start', BASE_WIDTH/2 - 120, BASE_HEIGHT/2 + 100);
-}
 
 function drawRoad() {
     // Tráva
@@ -217,13 +200,16 @@ function drawRoad() {
     // Silnice
     ctx.fillStyle = ROAD_COLOR;
     ctx.fillRect(BASE_WIDTH/2 - 100, 0, 200, BASE_HEIGHT);
-    // Čáry
+    // Čáry - animované
     ctx.strokeStyle = LINE_COLOR;
     ctx.lineWidth = 5;
+    ctx.setLineDash([20, 20]);
+    ctx.lineDashOffset = -cameraY * 0.1;
     ctx.beginPath();
     ctx.moveTo(BASE_WIDTH/2, 0);
     ctx.lineTo(BASE_WIDTH/2, BASE_HEIGHT);
     ctx.stroke();
+    ctx.setLineDash([]);
 }
 
 function drawUI() {
@@ -243,14 +229,14 @@ function drawGameOver() {
 }
 
 function initGame() {
-    playerCar = new Car(BASE_WIDTH/2, BASE_HEIGHT - 50, '#f00', true, playerName);
+    playerCar = new Car(BASE_WIDTH/2, BASE_HEIGHT / 2, '#f00', true, 'Player', 'player');
     aiCars = [];
     for (let i = 0; i < 9; i++) {
-        aiCars.push(new Car(BASE_WIDTH/2, BASE_HEIGHT - 100 - i * 50, '#0f0', false, americanNames[i]));
+        aiCars.push(new Car(BASE_WIDTH/2 + (Math.random() - 0.5) * 100, BASE_HEIGHT / 2 - 100 - i * 100, '#0f0', false, americanNames[i], 'ai'));
     }
     oncomingCars = [];
     slowCars = [];
-    trackProgress = 0;
+    cameraY = 0;
 }
 
 function checkCollision(car1, car2) {
@@ -265,7 +251,7 @@ window.addEventListener('keydown', (e) => {
     keys[e.key] = true;
     if (e.key === 'r' && gameState === 'game_over') {
         gameState = 'intro';
-        init();
+        introStartTime = Date.now();
     }
 });
 
