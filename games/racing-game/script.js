@@ -14,8 +14,8 @@ let cameraY = 0;
 let keys = {};
 
 // Nastavení velikosti canvas
-const BASE_WIDTH = 800;
-const BASE_HEIGHT = 600;
+const BASE_WIDTH = 600;
+const BASE_HEIGHT = 400;
 canvas.width = BASE_WIDTH;
 canvas.height = BASE_HEIGHT;
 
