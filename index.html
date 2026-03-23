@@ -1,24 +1,23 @@
 <!DOCTYPE html>
-<html lang="cs" style="overflow: hidden;">
+<html lang="en" style="overflow: hidden;">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VB Games - Rozcestník her</title>
+    <title>VBTronic Playground</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body style="overflow: hidden;">
     <div class="container">
-        <h1>VB Games</h1>
-        <p>Vyberte si hru:</p>
-        <ul id="game-list">
-            <!-- Seznam her se přidá dynamicky -->
-        </ul>
+        <h1>VBTronic Playground</h1>
+        <p>Applications</p>
+        <ul id="app-list"></ul>
+        <a class="main-link" href="https://vbtronic.com" target="_blank" rel="noopener noreferrer">vbtronic.com</a>
     </div>
 
     <div id="game-modal" class="modal">
         <div class="modal-content">
-            <span class="close">&times;</span>
-            <iframe id="game-container" tabindex="0"></iframe>
+            <button class="close" type="button" aria-label="Close">×</button>
+            <iframe id="game-container" tabindex="0" title="App Container"></iframe>
         </div>
     </div>
 

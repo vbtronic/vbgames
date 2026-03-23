@@ -505,7 +505,7 @@ for (let i = 0; i < 15; i++) {
 
 let startTime = Date.now();
 let lastSpawn = Date.now();
-const spawnInterval = 1500;
+let spawnInterval = 1500;
 const baseSpeed = 3;
 
 let gameState = 'level_select';
@@ -589,7 +589,7 @@ function update() {
             }
         }
 
-        if ((Date.now() - lastSpawn) > spawnIntervals[difficulty] && elapsed >= 3) {
+        if ((Date.now() - lastSpawn) > spawnInterval && elapsed >= 3) {
             obstacles.push(new Obstacle());
             lastSpawn = Date.now();
         }
@@ -880,6 +880,7 @@ document.addEventListener('keydown', (e) => {
         flashIntensity = 0;
         gameState = 'level_select';
         startTime = Date.now();
+        spawnInterval = 1500;
     }
 
     if (e.code === 'ControlLeft' && shieldAvailable && !shieldActive && gameState === 'playing') {

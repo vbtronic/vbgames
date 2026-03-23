@@ -1,264 +1,287 @@
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
-// Herní stav
-let gameState = 'intro';
-let gameRunning = true;
-let introStartTime = 0;
-let playerPosition = 0;
-let aiCars = [];
-let oncomingCars = [];
-let slowCars = [];
-let playerCar = null;
-let cameraY = 0;
-let keys = {};
-
-// Nastavení velikosti canvas
 const BASE_WIDTH = 600;
 const BASE_HEIGHT = 400;
 canvas.width = BASE_WIDTH;
 canvas.height = BASE_HEIGHT;
 
-// Škálování pro responzivnost
-const containerWidth = canvas.offsetWidth;
-const containerHeight = canvas.offsetHeight;
-const scaleX = containerWidth / BASE_WIDTH;
-const scaleY = containerHeight / BASE_HEIGHT;
-const scale = Math.min(scaleX, scaleY);
-canvas.style.width = `${BASE_WIDTH * scale}px`;
-canvas.style.height = `${BASE_HEIGHT * scale}px`;
+const game = {
+    state: 'intro',
+    running: true,
+    startTime: Date.now(),
+    distance: 0,
+    score: 0,
+    speed: 3,
+    laneWidth: 74,
+    roadCenter: BASE_WIDTH / 2,
+    dashOffset: 0,
+    player: {
+        lane: 0,
+        x: BASE_WIDTH / 2,
+        y: BASE_HEIGHT - 72,
+        width: 34,
+        height: 58,
+        color: '#ff5050'
+    },
+    traffic: [],
+    spawnTimer: 0,
+    spawnDelay: 850,
+    collisions: 0
+};
 
-// Barvy
-const ROAD_COLOR = '#666';
-const LINE_COLOR = '#fff';
-const GRASS_COLOR = '#0f0';
+const keys = {
+    left: false,
+    right: false,
+    up: false,
+    down: false
+};
 
-// Třídy
-class Car {
-    constructor(x, y, color, isPlayer = false, name = '', type = 'player') {
-        this.x = x;
-        this.y = y;
-        this.width = 40;
-        this.height = 20;
-        this.color = color;
-        this.speed = 0;
-        this.maxSpeed = type === 'slow' ? 2 : 5;
-        this.acceleration = 0.1;
-        this.deceleration = 0.05;
-        this.lane = 0; // 0 nebo 1
-        this.isPlayer = isPlayer;
-        this.name = name;
-        this.progress = 0;
-        this.type = type; // 'player', 'ai', 'slow', 'oncoming'
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+window.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowLeft') keys.left = true;
+    if (event.key === 'ArrowRight') keys.right = true;
+    if (event.key === 'ArrowUp') keys.up = true;
+    if (event.key === 'ArrowDown') keys.down = true;
+
+    if (event.key === ' ' && game.state === 'intro') {
+        startRace();
     }
 
-    update() {
-        if (this.isPlayer) {
-            if (keys.ArrowUp) {
-                this.speed = Math.min(this.maxSpeed, this.speed + this.acceleration);
-            } else if (keys.ArrowDown) {
-                this.speed = Math.max(-2, this.speed - this.acceleration);
-            } else {
-                if (this.speed > 0) {
-                    this.speed -= this.deceleration;
-                } else if (this.speed < 0) {
-                    this.speed += this.deceleration;
-                }
-            }
-            if (keys.ArrowLeft && this.lane > 0) {
-                this.lane--;
-                this.x -= 50;
-            }
-            if (keys.ArrowRight && this.lane < 1) {
-                this.lane++;
-                this.x += 50;
-            }
-        } else {
-            // AI logika
-            if (this.type === 'ai') {
-                this.speed = Math.random() * 3 + 3;
-            } else if (this.type === 'slow') {
-                this.speed = Math.random() * 1 + 1;
-            } else if (this.type === 'oncoming') {
-                this.speed = Math.random() * 4 + 2;
-            }
-        }
-        this.y -= this.speed;
-        this.progress += this.speed;
+    if ((event.key === 'r' || event.key === 'R') && game.state === 'game_over') {
+        resetRace();
     }
 
-    draw() {
-        ctx.fillStyle = this.color;
-        ctx.fillRect(this.x - this.width/2, this.y - this.height/2, this.width, this.height);
-        if (this.name) {
-            ctx.fillStyle = '#fff';
-            ctx.font = '12px Arial';
-            ctx.fillText(this.name, this.x - this.width/2, this.y - this.height/2 - 5);
+    if (event.key === 'Escape') {
+        window.parent.postMessage({ action: 'closeModal' }, '*');
+    }
+});
+
+window.addEventListener('keyup', (event) => {
+    if (event.key === 'ArrowLeft') keys.left = false;
+    if (event.key === 'ArrowRight') keys.right = false;
+    if (event.key === 'ArrowUp') keys.up = false;
+    if (event.key === 'ArrowDown') keys.down = false;
+});
+
+gameLoop();
+
+function resizeCanvas() {
+    const gameContainer = document.getElementById('game');
+    const containerWidth = gameContainer.clientWidth;
+    const containerHeight = gameContainer.clientHeight;
+    const scale = Math.min(containerWidth / BASE_WIDTH, containerHeight / BASE_HEIGHT, 1);
+    canvas.style.width = `${BASE_WIDTH * scale}px`;
+    canvas.style.height = `${BASE_HEIGHT * scale}px`;
+}
+
+function startRace() {
+    game.state = 'playing';
+    game.startTime = Date.now();
+}
+
+function resetRace() {
+    game.state = 'intro';
+    game.distance = 0;
+    game.score = 0;
+    game.speed = 3;
+    game.traffic = [];
+    game.spawnTimer = 0;
+    game.collisions = 0;
+    game.player.lane = 0;
+    game.player.x = laneToX(0);
+}
+
+function laneToX(lane) {
+    return game.roadCenter + lane * game.laneWidth;
+}
+
+function spawnTraffic() {
+    const lane = Math.floor(Math.random() * 3) - 1;
+    const type = Math.random() > 0.7 ? 'truck' : 'car';
+    const color = type === 'truck' ? '#ffee59' : '#64f5ff';
+    const width = type === 'truck' ? 38 : 30;
+    const height = type === 'truck' ? 74 : 58;
+    const speed = 2 + Math.random() * 2 + game.speed * 0.3;
+
+    game.traffic.push({
+        lane,
+        x: laneToX(lane),
+        y: -height,
+        width,
+        height,
+        speed,
+        color
+    });
+}
+
+function update(deltaTime) {
+    if (game.state !== 'playing') {
+        return;
+    }
+
+    if (keys.left) {
+        game.player.lane = Math.max(-1, game.player.lane - 1);
+        keys.left = false;
+    }
+
+    if (keys.right) {
+        game.player.lane = Math.min(1, game.player.lane + 1);
+        keys.right = false;
+    }
+
+    if (keys.up) {
+        game.speed = Math.min(8, game.speed + 0.02);
+    }
+
+    if (keys.down) {
+        game.speed = Math.max(2, game.speed - 0.04);
+    }
+
+    game.player.x = laneToX(game.player.lane);
+    game.distance += game.speed;
+    game.score = Math.floor(game.distance / 5);
+    game.dashOffset += game.speed * 5;
+
+    game.spawnTimer += deltaTime;
+    const dynamicDelay = Math.max(320, game.spawnDelay - game.score * 1.4);
+    if (game.spawnTimer > dynamicDelay) {
+        game.spawnTimer = 0;
+        spawnTraffic();
+    }
+
+    game.traffic.forEach((car) => {
+        car.y += car.speed;
+    });
+
+    game.traffic = game.traffic.filter((car) => car.y < BASE_HEIGHT + 120);
+
+    for (const car of game.traffic) {
+        if (isColliding(game.player, car)) {
+            game.collisions += 1;
+            game.state = 'game_over';
+            break;
         }
     }
 }
 
-// Funkce pro generování jmen
-const americanNames = ['John', 'Mike', 'Steve', 'Bob', 'Tom', 'Dave', 'Jim', 'Bill', 'Jack', 'Paul'];
-
-// Inicializace
-function init() {
-    introStartTime = Date.now();
-    playerCar = new Car(BASE_WIDTH/2, BASE_HEIGHT - 50, '#f00', true);
+function isColliding(a, b) {
+    return (
+        a.x - a.width / 2 < b.x + b.width / 2 &&
+        a.x + a.width / 2 > b.x - b.width / 2 &&
+        a.y - a.height / 2 < b.y + b.height / 2 &&
+        a.y + a.height / 2 > b.y - b.height / 2
+    );
 }
 
-// Herní smyčka
-function gameLoop() {
-    update();
-    draw();
-    if (gameRunning) {
+function draw() {
+    ctx.clearRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+    drawRoad();
+    drawTraffic();
+    drawPlayer();
+    drawHUD();
+
+    if (game.state === 'intro') {
+        drawIntroOverlay();
+    }
+
+    if (game.state === 'game_over') {
+        drawGameOverOverlay();
+    }
+}
+
+function drawRoad() {
+    ctx.fillStyle = '#183411';
+    ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+
+    const roadWidth = game.laneWidth * 3 + 70;
+    const roadX = game.roadCenter - roadWidth / 2;
+    ctx.fillStyle = '#454d57';
+    ctx.fillRect(roadX, 0, roadWidth, BASE_HEIGHT);
+
+    ctx.fillStyle = '#fafafa';
+    const dashHeight = 24;
+    const dashGap = 16;
+    for (let laneMark = -0.5; laneMark <= 0.5; laneMark += 1) {
+        const x = game.roadCenter + laneMark * game.laneWidth;
+        for (let y = -dashHeight + (game.dashOffset % (dashHeight + dashGap)); y < BASE_HEIGHT + dashHeight; y += dashHeight + dashGap) {
+            ctx.fillRect(x - 3, y, 6, dashHeight);
+        }
+    }
+}
+
+function drawPlayer() {
+    drawCar(game.player.x, game.player.y, game.player.width, game.player.height, game.player.color);
+}
+
+function drawTraffic() {
+    game.traffic.forEach((car) => {
+        drawCar(car.x, car.y, car.width, car.height, car.color);
+    });
+}
+
+function drawCar(x, y, width, height, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x - width / 2, y - height / 2, width, height);
+
+    ctx.fillStyle = '#202833';
+    ctx.fillRect(x - width / 4, y - height / 3, width / 2, height / 4);
+
+    ctx.fillStyle = '#111';
+    ctx.fillRect(x - width / 2, y - height / 2, 5, 10);
+    ctx.fillRect(x + width / 2 - 5, y - height / 2, 5, 10);
+    ctx.fillRect(x - width / 2, y + height / 2 - 10, 5, 10);
+    ctx.fillRect(x + width / 2 - 5, y + height / 2 - 10, 5, 10);
+}
+
+function drawHUD() {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '16px Arial';
+    ctx.fillText(`Score: ${game.score}`, 14, 24);
+    ctx.fillText(`Speed: ${game.speed.toFixed(1)}x`, 14, 46);
+}
+
+function drawIntroOverlay() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '36px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Racing Game', BASE_WIDTH / 2, BASE_HEIGHT / 2 - 40);
+    ctx.font = '18px Arial';
+    ctx.fillText('Arrow Left/Right: lane change', BASE_WIDTH / 2, BASE_HEIGHT / 2 + 8);
+    ctx.fillText('Arrow Up/Down: speed', BASE_WIDTH / 2, BASE_HEIGHT / 2 + 34);
+    ctx.fillText('Press SPACE to start', BASE_WIDTH / 2, BASE_HEIGHT / 2 + 70);
+    ctx.textAlign = 'left';
+}
+
+function drawGameOverOverlay() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.62)';
+    ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
+
+    ctx.fillStyle = '#ff6f6f';
+    ctx.font = '44px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('Crash!', BASE_WIDTH / 2, BASE_HEIGHT / 2 - 20);
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '22px Arial';
+    ctx.fillText(`Final score: ${game.score}`, BASE_WIDTH / 2, BASE_HEIGHT / 2 + 20);
+    ctx.fillText('Press R to restart', BASE_WIDTH / 2, BASE_HEIGHT / 2 + 56);
+    ctx.textAlign = 'left';
+}
+
+let lastFrame = performance.now();
+function gameLoop(now = performance.now()) {
+    const deltaTime = now - lastFrame;
+    lastFrame = now;
+
+    if (game.running) {
+        update(deltaTime);
+        draw();
         requestAnimationFrame(gameLoop);
     }
 }
-
-// Update
-function update() {
-    if (gameState === 'intro') {
-        if (Date.now() - introStartTime > 10000 || keys[' ']) { // 10 sekund nebo mezerník
-            gameState = 'playing';
-            initGame();
-        }
-    } else if (gameState === 'playing') {
-        playerCar.update();
-        cameraY = playerCar.y - BASE_HEIGHT / 2; // Camera follow
-        aiCars.forEach(car => car.update());
-        oncomingCars.forEach(car => {
-            car.update();
-            if (checkCollision(playerCar, car)) {
-                gameState = 'game_over';
-            }
-        });
-        slowCars.forEach(car => car.update());
-        // Generování nových aut
-        if (Math.random() < 0.01) {
-            oncomingCars.push(new Car(BASE_WIDTH/2 + (Math.random() - 0.5) * 200, cameraY + BASE_HEIGHT + 50, '#00f', false, '', 'oncoming'));
-        }
-        if (Math.random() < 0.005) {
-            slowCars.push(new Car(BASE_WIDTH/2 + (Math.random() - 0.5) * 100, cameraY + BASE_HEIGHT + 50, '#ff0', false, '', 'slow'));
-        }
-        // Odstranění aut mimo obrazovku
-        oncomingCars = oncomingCars.filter(car => car.y < cameraY - 100);
-        slowCars = slowCars.filter(car => car.y < cameraY - 100);
-        aiCars = aiCars.filter(car => car.y < cameraY - 100);
-        // Kontrola předjíždění
-        playerPosition = 1;
-        aiCars.forEach(car => {
-            if (playerCar.progress < car.progress) {
-                playerPosition++;
-            }
-        });
-    }
-}
-
-// Draw
-function draw() {
-    ctx.clearRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
-    if (gameState === 'intro') {
-        drawIntro();
-    } else if (gameState === 'playing') {
-        ctx.save();
-        ctx.translate(0, -cameraY);
-        drawRoad();
-        playerCar.draw();
-        aiCars.forEach(car => car.draw());
-        oncomingCars.forEach(car => car.draw());
-        slowCars.forEach(car => car.draw());
-        ctx.restore();
-        drawUI();
-    } else if (gameState === 'game_over') {
-        drawGameOver();
-    }
-}
-
-function drawIntro() {
-    let time = (Date.now() - introStartTime) / 1000; // sekundy
-    drawRoad();
-    // Animace aut
-    let demoPlayer = new Car(BASE_WIDTH/2 - 50, BASE_HEIGHT/2 + Math.sin(time * 2) * 50, '#f00', false, 'Player', 'player');
-    demoPlayer.draw();
-    let demoAI = new Car(BASE_WIDTH/2 + 50, BASE_HEIGHT/2 + Math.sin(time * 2 + 1) * 50, '#0f0', false, 'AI', 'ai');
-    demoAI.draw();
-    let demoSlow = new Car(BASE_WIDTH/2, BASE_HEIGHT/2 + 100 + Math.sin(time * 1.5) * 20, '#ff0', false, '', 'slow');
-    demoSlow.draw();
-    let demoOncoming = new Car(BASE_WIDTH/2, BASE_HEIGHT/2 - 100 - Math.sin(time * 1.5) * 20, '#00f', false, '', 'oncoming');
-    demoOncoming.draw();
-    ctx.fillStyle = '#fff';
-    ctx.font = '16px Arial';
-    ctx.fillText('Ukázka - Mezerník pro start', BASE_WIDTH/2 - 100, BASE_HEIGHT - 50);
-}
-
-
-function drawRoad() {
-    // Tráva
-    ctx.fillStyle = GRASS_COLOR;
-    ctx.fillRect(0, 0, BASE_WIDTH, BASE_HEIGHT);
-    // Silnice
-    ctx.fillStyle = ROAD_COLOR;
-    ctx.fillRect(BASE_WIDTH/2 - 100, 0, 200, BASE_HEIGHT);
-    // Čáry - animované
-    ctx.strokeStyle = LINE_COLOR;
-    ctx.lineWidth = 5;
-    ctx.setLineDash([20, 20]);
-    ctx.lineDashOffset = -cameraY * 0.1;
-    ctx.beginPath();
-    ctx.moveTo(BASE_WIDTH/2, 0);
-    ctx.lineTo(BASE_WIDTH/2, BASE_HEIGHT);
-    ctx.stroke();
-    ctx.setLineDash([]);
-}
-
-function drawUI() {
-    ctx.fillStyle = '#fff';
-    ctx.font = '16px Arial';
-    ctx.fillText('Pozice: ' + playerPosition + '/10', BASE_WIDTH - 100, 30);
-    ctx.fillText('Rychlost: ' + playerCar.speed.toFixed(1), BASE_WIDTH - 100, 50);
-}
-
-function drawGameOver() {
-    ctx.fillStyle = '#f00';
-    ctx.font = '36px Arial';
-    ctx.fillText('Game Over', BASE_WIDTH/2 - 100, BASE_HEIGHT/2);
-    ctx.fillStyle = '#fff';
-    ctx.font = '24px Arial';
-    ctx.fillText('Stiskni R pro restart', BASE_WIDTH/2 - 100, BASE_HEIGHT/2 + 50);
-}
-
-function initGame() {
-    playerCar = new Car(BASE_WIDTH/2, BASE_HEIGHT / 2, '#f00', true, 'Player', 'player');
-    aiCars = [];
-    for (let i = 0; i < 9; i++) {
-        aiCars.push(new Car(BASE_WIDTH/2 + (Math.random() - 0.5) * 100, BASE_HEIGHT / 2 - 100 - i * 100, '#0f0', false, americanNames[i], 'ai'));
-    }
-    oncomingCars = [];
-    slowCars = [];
-    cameraY = 0;
-}
-
-function checkCollision(car1, car2) {
-    return car1.x < car2.x + car2.width &&
-           car1.x + car1.width > car2.x &&
-           car1.y < car2.y + car2.height &&
-           car1.y + car1.height > car2.y;
-}
-
-// Event listeners
-window.addEventListener('keydown', (e) => {
-    keys[e.key] = true;
-    if (e.key === 'r' && gameState === 'game_over') {
-        gameState = 'intro';
-        introStartTime = Date.now();
-    }
-});
-
-window.addEventListener('keyup', (e) => {
-    keys[e.key] = false;
-});
-
-// Spuštění
-init();
-gameLoop();
